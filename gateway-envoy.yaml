@@ -1,0 +1,117 @@
+# ============================================================================
+#  GATEWAY  —  Envoy edge proxy
+#  Job:  (1) terminate mTLS   (2) validate the JWT   (3) route to a component
+#  Nothing reaches any component without passing through here.
+# ============================================================================
+static_resources:
+
+  listeners:
+  - name: edge_https
+    address:
+      socket_address: { address: 0.0.0.0, port_value: 8443 }
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: edge
+          # ---- enable WebSocket upgrades for the whole listener (chatbot streams) ----
+          upgrade_configs:
+          - upgrade_type: websocket
+          stream_idle_timeout: 0s        # don't kill idle WS connections between messages
+          route_config:
+            name: edge_routes
+            virtual_hosts:
+            - name: services
+              domains: ["*"]
+              # ---- (3) ROUTING: only explicitly-declared paths are forwarded ----
+              routes:
+              # ---- WebSocket chat stream (long-lived; disable the route timeout) ----
+              - match: { prefix: "/v1/chat" }
+                route:
+                  cluster: component_predict
+                  timeout: 0s                  # never time out a live chat socket
+                  upgrade_configs:
+                  - upgrade_type: websocket     # allow the HTTP->WS upgrade on this route
+              - match: { prefix: "/v1/predict" }
+                route: { cluster: component_predict }
+              - match: { prefix: "/v1/embeddings" }
+                route: { cluster: component_predict }
+              # NOTE: there is NO  match: { prefix: "/" }  catch-all on purpose.
+              # Any path not listed above falls through to this 404 and is rejected.
+              - match: { prefix: "/" }
+                direct_response:
+                  status: 404
+                  body: { inline_string: "no route" }
+
+          http_filters:
+          # ---- (2) JWT VALIDATION: signature, expiry, issuer & audience ----
+          - name: envoy.filters.http.jwt_authn
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+              providers:
+                corporate_idp:
+                  issuer: "https://idp.corp.example.com"
+                  audiences: ["ai-platform"]
+                  forward: true              # keep the token so the sidecar can re-check it
+                  remote_jwks:
+                    http_uri:
+                      uri: "https://idp.corp.example.com/.well-known/jwks.json"
+                      cluster: jwks_cluster
+                      timeout: 5s
+                    cache_duration: 600s
+              rules:
+              - match: { prefix: "/v1/" }
+                requires: { provider_name: corporate_idp }   # JWT required on every /v1/* call
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+      # ---- (1) DOWNSTREAM mTLS: the caller MUST present a valid client cert ----
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+          require_client_certificate: true            # <-- this is what makes it *mutual* TLS
+          common_tls_context:
+            tls_certificates:
+            - certificate_chain: { filename: "/etc/certs/gateway.crt" }
+              private_key:       { filename: "/etc/certs/gateway.key" }
+            validation_context:
+              trusted_ca: { filename: "/etc/certs/client-ca.crt" }   # CA that signs allowed callers
+
+  clusters:
+  # ---- Upstream to the component, again over mTLS ----
+  - name: component_predict
+    type: STRICT_DNS
+    load_assignment:
+      cluster_name: component_predict
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address: { address: predict.svc.cluster.local, port_value: 9443 }
+    transport_socket:
+      name: envoy.transport_sockets.tls
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+        common_tls_context:
+          tls_certificates:                                   # gateway proves its identity to the sidecar
+          - certificate_chain: { filename: "/etc/certs/gateway.crt" }
+            private_key:       { filename: "/etc/certs/gateway.key" }
+          validation_context:
+            trusted_ca: { filename: "/etc/certs/mesh-ca.crt" }
+
+  - name: jwks_cluster
+    type: STRICT_DNS
+    load_assignment:
+      cluster_name: jwks_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address: { address: idp.corp.example.com, port_value: 443 }
+    transport_socket:
+      name: envoy.transport_sockets.tls
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext

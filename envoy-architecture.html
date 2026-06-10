@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gateway &amp; Sidecar Architecture — for Python/AI Developers</title>
+<style>
+  :root{
+    --navy:#0f2747;
+    --blue:#1f5fa8;
+    --blue-light:#3b82c4;
+    --accent:#16a085;
+    --accent-warn:#e08a2b;
+    --danger:#c0392b;
+    --bg:#f4f6f9;
+    --card:#ffffff;
+    --ink:#1c2b3a;
+    --muted:#5e7184;
+    --line:#d7dee6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--navy);
+    color:var(--ink);
+    overflow:hidden;
+  }
+  .deck{position:relative;width:100vw;height:100vh;}
+  .slide{
+    position:absolute;inset:0;
+    display:none;
+    flex-direction:column;
+    padding:54px 72px 72px;
+    background:var(--bg);
+    animation:fade .35s ease;
+  }
+  .slide.active{display:flex;}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .kicker{
+    font-size:13px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--blue);font-weight:700;margin-bottom:10px;
+  }
+  h1{font-size:44px;line-height:1.1;color:var(--navy);margin-bottom:14px;font-weight:800;}
+  h2{font-size:32px;color:var(--navy);margin-bottom:20px;font-weight:800;line-height:1.15;}
+  p{font-size:19px;line-height:1.55;color:var(--ink);max-width:60ch;}
+  .lead{font-size:21px;color:var(--muted);max-width:64ch;line-height:1.5;}
+  .muted{color:var(--muted);}
+  .accent{color:var(--accent);font-weight:700;}
+  .blue{color:var(--blue);font-weight:700;}
+  .danger{color:var(--danger);font-weight:700;}
+  code{font-family:"SF Mono",Menlo,Consolas,monospace;background:#e7edf3;color:var(--navy);padding:2px 7px;border-radius:5px;font-size:.92em;}
+
+  .cols{display:flex;gap:28px;flex:1;min-height:0;}
+  .col{flex:1;}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:24px 26px;box-shadow:0 1px 3px rgba(15,39,71,.06);
+  }
+  .card h3{font-size:20px;color:var(--navy);margin-bottom:10px;display:flex;align-items:center;gap:10px;}
+  .card p{font-size:16.5px;line-height:1.5;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px;}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;}
+
+  ul.clean{list-style:none;margin-top:6px;}
+  ul.clean li{font-size:18px;line-height:1.5;padding:9px 0 9px 32px;position:relative;border-bottom:1px solid #eef2f6;}
+  ul.clean li:last-child{border-bottom:none;}
+  ul.clean li::before{content:"";position:absolute;left:4px;top:16px;width:9px;height:9px;border-radius:50%;background:var(--blue);}
+  ul.clean li.ok::before{background:var(--accent);}
+  ul.clean li.no::before{background:var(--danger);}
+  ul.clean li.warn::before{background:var(--accent-warn);}
+
+  .pill{display:inline-block;background:#e9f1fa;color:var(--blue);font-size:13px;font-weight:700;
+    padding:4px 12px;border-radius:999px;letter-spacing:.03em;}
+  .pill.green{background:#e6f5f0;color:var(--accent);}
+  .pill.red{background:#fbeae8;color:var(--danger);}
+  .pill.amber{background:#fbf1e3;color:var(--accent-warn);}
+
+  .analogy{
+    background:linear-gradient(180deg,#eef4fb,#e6eef8);
+    border-left:5px solid var(--blue);border-radius:10px;
+    padding:18px 22px;margin-top:8px;
+  }
+  .analogy b{color:var(--navy);}
+  .analogy p{font-size:17px;color:var(--ink);}
+
+  .center{justify-content:center;}
+  .title-slide{background:linear-gradient(135deg,#0f2747 0%,#1f5fa8 100%);}
+  .title-slide .kicker{color:#9cc4ec;}
+  .title-slide h1{color:#fff;font-size:52px;}
+  .title-slide p{color:#cdddf0;}
+  .title-slide .tag{margin-top:26px;display:flex;gap:10px;flex-wrap:wrap;}
+  .title-slide .tag span{background:rgba(255,255,255,.12);color:#dcebff;border:1px solid rgba(255,255,255,.2);
+    padding:7px 15px;border-radius:999px;font-size:14px;font-weight:600;}
+
+  /* progress + nav */
+  .bar{position:fixed;top:0;left:0;height:4px;background:var(--accent);z-index:50;transition:width .3s;}
+  .nav{position:fixed;bottom:18px;right:26px;display:flex;align-items:center;gap:14px;z-index:50;}
+  .nav button{
+    background:var(--navy);color:#fff;border:none;width:42px;height:42px;border-radius:50%;
+    font-size:18px;cursor:pointer;opacity:.9;transition:.2s;
+  }
+  .nav button:hover{opacity:1;transform:translateY(-1px);}
+  .nav button:disabled{opacity:.3;cursor:default;transform:none;}
+  .counter{position:fixed;bottom:26px;left:26px;color:var(--muted);font-size:14px;font-weight:600;z-index:50;}
+  .footer-note{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);color:var(--muted);font-size:13px;z-index:40;}
+
+  svg{width:100%;height:auto;}
+  .diagram-wrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;font-size:14px;color:var(--muted);}
+  .legend span{display:inline-flex;align-items:center;gap:7px;}
+  .dot{width:12px;height:12px;border-radius:3px;display:inline-block;}
+
+  /* step rows */
+  .steps{display:flex;flex-direction:column;gap:14px;margin-top:6px;}
+  .step{display:flex;align-items:center;gap:20px;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:16px 22px;box-shadow:0 1px 3px rgba(15,39,71,.05);}
+  .step .num{flex:0 0 44px;width:44px;height:44px;border-radius:50%;background:var(--navy);color:#fff;
+    font-size:20px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+  .step .hop{flex:0 0 250px;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:800;color:var(--navy);}
+  .step .hop .node{background:#eef4fb;border:1px solid #cdddf0;border-radius:7px;padding:5px 11px;white-space:nowrap;}
+  .step .hop .arrow{color:var(--blue);font-size:18px;}
+  .step .desc{font-size:17px;color:var(--ink);line-height:1.4;}
+  .step .tag2{flex:0 0 88px;text-align:right;}
+  .step.ret{background:#f6f8fa;}
+  .step.ret .num{background:#5e7184;}
+
+  /* code / yaml */
+  .code{background:#0f2747;border-radius:12px;padding:18px 22px;overflow:auto;flex:1;min-height:0;
+    box-shadow:0 2px 8px rgba(15,39,71,.18);}
+  .code pre{margin:0;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:13.5px;line-height:1.55;
+    color:#cde3ff;white-space:pre;}
+  .code .c{color:#6f8aa8;font-style:italic;}        /* comment */
+  .code .k{color:#7ec8ff;}                            /* key */
+  .code .v{color:#9be8c8;}                            /* value/string */
+  .code .h{color:#ffd479;font-weight:700;}            /* highlight */
+  .codecap{font-size:14px;color:var(--muted);margin:10px 2px 0;}
+  .filetag{display:inline-block;background:#16a085;color:#fff;font-size:12px;font-weight:700;
+    padding:3px 10px;border-radius:6px;margin-left:10px;vertical-align:middle;letter-spacing:.03em;}
+
+  /* anatomy nested boxes */
+  .anat{border:2px solid var(--blue);border-radius:12px;padding:14px 16px;background:#f3f8fd;}
+  .anat-h{font-family:"SF Mono",Menlo,Consolas,monospace;font-weight:800;color:var(--blue);font-size:16px;
+    display:flex;align-items:baseline;gap:10px;margin-bottom:4px;}
+  .anat-h small{font-family:inherit;font-weight:600;color:var(--muted);font-size:13px;letter-spacing:0;}
+  .anat .sub{margin:10px 0 0 14px;border-left:3px solid #cdddf0;padding-left:14px;display:flex;flex-direction:column;gap:10px;}
+  .box{border:1.5px solid var(--line);border-radius:9px;background:#fff;padding:9px 13px;}
+  .box .t{font-family:"SF Mono",Menlo,Consolas,monospace;font-weight:800;color:var(--navy);font-size:14.5px;}
+  .box .d{font-size:13.5px;color:var(--muted);margin-top:2px;line-height:1.35;}
+  .box.green{border-color:#b9e2d3;background:#f2faf7;}
+  .box.green .t{color:var(--accent);}
+  .box.amber{border-color:#f0dcc0;background:#fdf8f0;}
+  .box.amber .t{color:var(--accent-warn);}
+
+  /* mapping table */
+  table.map{width:100%;border-collapse:collapse;font-size:16.5px;}
+  table.map th{background:var(--navy);color:#fff;text-align:left;padding:11px 16px;font-size:14px;
+    letter-spacing:.04em;text-transform:uppercase;}
+  table.map th:first-child{border-top-left-radius:10px;}
+  table.map th:last-child{border-top-right-radius:10px;}
+  table.map td{padding:11px 16px;border-bottom:1px solid #e6ecf2;vertical-align:top;line-height:1.4;}
+  table.map tr:nth-child(even) td{background:#f7fafc;}
+  table.map .concept{font-weight:700;color:var(--navy);}
+  table.map code{font-size:13.5px;}
+</style>
+</head>
+<body>
+<div class="bar" id="bar"></div>
+<div class="deck" id="deck">
+
+  <!-- 1 TITLE -->
+  <section class="slide active center title-slide">
+    <div class="kicker">Platform Architecture · Briefing</div>
+    <h1>The Gateway &amp; the Sidecar</h1>
+    <p class="lead" style="color:#cdddf0;max-width:60ch">How your service talks to the world — and the corporate backend — safely, without you writing a single line of security code.</p>
+    <div class="tag">
+      <span>Envoy Proxy</span><span>mTLS</span><span>JWT</span><span>Sidecar</span><span>Zero-Trust</span>
+    </div>
+    <p style="margin-top:34px;color:#9cc4ec;font-size:15px">Audience: Python / AI developers · No Envoy experience required</p>
+  </section>
+
+  <!-- TOC -->
+  <section class="slide">
+    <div class="kicker">Table of contents</div>
+    <h2>What we'll cover</h2>
+    <div class="grid3" style="margin-top:6px">
+      <div class="card">
+        <h3 style="font-size:17px">🧩 Foundations</h3>
+        <ul class="clean">
+          <li>Why this exists</li>
+          <li>What is Envoy?</li>
+          <li>mTLS</li>
+          <li>JWT</li>
+          <li>The sidecar pattern</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="font-size:17px">🏛️ The architecture</h3>
+        <ul class="clean">
+          <li>Gateway &amp; Component</li>
+          <li>The gateway in detail</li>
+          <li>The component in detail</li>
+          <li>Life of one request</li>
+          <li>Routes &amp; no bare <code>/</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="font-size:17px">⚙️ Reading the config</h3>
+        <ul class="clean">
+          <li>Envoy's building blocks</li>
+          <li>Concept → config map</li>
+          <li>Gateway &amp; sidecar YAML</li>
+          <li>Egress to the backend</li>
+          <li>WebSockets for chat</li>
+        </ul>
+      </div>
+    </div>
+    <div class="analogy" style="margin-top:18px"><p>We build from plain-English concepts up to real Envoy config — then close with <b>what it means for you</b>, common gotchas, and a one-screen cheat sheet.</p></div>
+  </section>
+
+  <!-- 2 WHY -->
+  <section class="slide">
+    <div class="kicker">Why this exists</div>
+    <h2>You write Python. The platform handles the armor.</h2>
+    <div class="cols">
+      <div class="col card">
+        <h3>🧠 What you focus on</h3>
+        <ul class="clean">
+          <li class="ok">Your model, your API endpoints, your business logic</li>
+          <li class="ok">Reading a request, returning a response</li>
+          <li class="ok">Calling the corporate backend when you need data</li>
+        </ul>
+      </div>
+      <div class="col card">
+        <h3>🛡️ What the platform adds around you</h3>
+        <ul class="clean">
+          <li>Encrypted, mutually-authenticated connections (<span class="blue">mTLS</span>)</li>
+          <li>Identity &amp; permission checks on every call (<span class="blue">JWT</span>)</li>
+          <li>Strict routing — only approved paths get through</li>
+        </ul>
+      </div>
+    </div>
+    <div class="analogy"><p><b>The idea:</b> security and networking are pushed <i>out</i> of your application and into a dedicated layer next to it. Same protection for every service, and your code stays simple.</p></div>
+  </section>
+
+  <!-- 3 WHAT IS ENVOY -->
+  <section class="slide">
+    <div class="kicker">Concept · 1 of 4</div>
+    <h2>What is Envoy?</h2>
+    <p class="lead" style="margin-bottom:22px">Envoy is a <span class="blue">proxy</span> — a smart traffic cop that sits in front of an application. Every request goes <i>through</i> Envoy before it reaches your code, and every response goes back out through it.</p>
+    <div class="grid3">
+      <div class="card"><h3>📥 It inspects</h3><p>Checks who is calling, whether their token is valid, and which path they want.</p></div>
+      <div class="card"><h3>🔀 It routes</h3><p>Sends approved traffic to the right place, and rejects everything else.</p></div>
+      <div class="card"><h3>🔐 It encrypts</h3><p>Wraps connections in TLS so traffic can't be read or spoofed in transit.</p></div>
+    </div>
+    <div class="analogy"><p><b>Analogy:</b> Envoy is the <b>building's security desk</b>. You're an employee in an office upstairs — you just do your work. Nobody reaches your desk without first passing the guard who checks IDs, logs visitors, and only allows people to the floors they're cleared for.</p></div>
+  </section>
+
+  <!-- 4 mTLS -->
+  <section class="slide">
+    <div class="kicker">Concept · 2 of 4</div>
+    <h2>mTLS — both sides prove who they are</h2>
+    <div class="cols">
+      <div class="col">
+        <p class="lead" style="margin-bottom:16px">Normal HTTPS (TLS): <b>only the server</b> shows a certificate. The client stays anonymous.</p>
+        <p class="lead"><b>Mutual TLS (mTLS):</b> <span class="accent">both</span> the client and the server present certificates. Each side verifies the other before a single byte of data flows.</p>
+      </div>
+      <div class="col">
+        <div class="analogy">
+          <p><b>Analogy:</b> a normal website is like a shop — you check the shop is legit, but the shop doesn't check you. <b>mTLS is a secret handshake</b>: both people must know it, or the door stays shut.</p>
+        </div>
+        <ul class="clean" style="margin-top:14px">
+          <li class="ok">No valid certificate → connection refused</li>
+          <li class="ok">Encrypted end-to-end</li>
+          <li class="ok">Stops impostor services from connecting</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 JWT -->
+  <section class="slide">
+    <div class="kicker">Concept · 3 of 4</div>
+    <h2>JWT — a signed, tamper-proof ID badge</h2>
+    <div class="cols">
+      <div class="col">
+        <p class="lead" style="margin-bottom:16px">A <b>JWT</b> (JSON Web Token) is a small token the caller sends with each request. It carries claims — <i>who</i> they are, <i>what</i> they're allowed to do, and <i>when</i> it expires — and it's cryptographically <span class="blue">signed</span>.</p>
+        <ul class="clean">
+          <li>Signature can be verified, so it can't be forged</li>
+          <li>Validation = check signature, expiry, issuer &amp; audience</li>
+          <li class="warn">If anything is off → request rejected before reaching you</li>
+        </ul>
+      </div>
+      <div class="col">
+        <div class="analogy">
+          <p><b>Analogy:</b> a JWT is a <b>festival wristband</b>. The hologram (signature) proves it's real, the colour says which stages you can enter, and it stops working after the event (expiry). Guards just glance at it — no phone call to HQ needed.</p>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <p style="font-size:15px"><code>header . payload . signature</code><br><span class="muted" style="font-size:14px">three base64 parts, joined by dots</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 SIDECAR -->
+  <section class="slide">
+    <div class="kicker">Concept · 4 of 4</div>
+    <h2>The Sidecar pattern</h2>
+    <p class="lead" style="margin-bottom:14px">Your component is deployed as <b>two containers side by side</b>: your app and an Envoy "sidecar". All traffic in and out of your app flows through the sidecar first.</p>
+    <div class="cols">
+      <div class="col" style="flex:1.25;display:flex;align-items:center;">
+        <svg viewBox="0 0 560 290" xmlns="http://www.w3.org/2000/svg" style="max-height:340px">
+          <rect x="40" y="40" width="480" height="210" rx="18" fill="#ffffff" stroke="#1f5fa8" stroke-width="2.5"/>
+          <text x="280" y="28" text-anchor="middle" font-size="15" fill="#1f5fa8" font-weight="800">YOUR POD (one deployment unit)</text>
+
+          <rect x="70" y="95" width="180" height="110" rx="14" fill="#e6f5f0" stroke="#16a085" stroke-width="2.5"/>
+          <text x="160" y="140" text-anchor="middle" font-size="19" fill="#0f2747" font-weight="800">Python app</text>
+          <text x="160" y="168" text-anchor="middle" font-size="14" fill="#5e7184">model · API · logic</text>
+
+          <rect x="310" y="95" width="180" height="110" rx="14" fill="#e9f1fa" stroke="#1f5fa8" stroke-width="2.5"/>
+          <text x="400" y="140" text-anchor="middle" font-size="19" fill="#0f2747" font-weight="800">Envoy sidecar</text>
+          <text x="400" y="168" text-anchor="middle" font-size="14" fill="#5e7184">mTLS · JWT · routes</text>
+
+          <line x1="250" y1="150" x2="310" y2="150" stroke="#5e7184" stroke-width="3"/>
+          <polygon points="312,150 299,143 299,157" fill="#5e7184"/>
+          <polygon points="248,150 261,143 261,157" fill="#5e7184"/>
+          <text x="280" y="225" text-anchor="middle" font-size="13" fill="#5e7184">localhost</text>
+
+          <line x1="490" y1="150" x2="545" y2="150" stroke="#1f5fa8" stroke-width="3"/>
+          <polygon points="545,150 532,143 532,157" fill="#1f5fa8"/>
+          <text x="528" y="138" text-anchor="middle" font-size="13" fill="#1f5fa8" font-weight="700">world</text>
+        </svg>
+      </div>
+      <div class="col" style="display:flex;flex-direction:column;justify-content:center;gap:16px;">
+        <ul class="clean">
+          <li class="ok">Your app only ever talks to the sidecar over <b>localhost</b> — no TLS in your code.</li>
+          <li class="ok">The sidecar handles everything facing the outside world: certs, tokens, routing.</li>
+          <li class="ok">You don't configure it — the platform ships it alongside your container.</li>
+        </ul>
+        <div class="analogy"><p><b>Analogy:</b> like a <b>motorcycle sidecar</b> — it rides along carrying the heavy gear (security, certs, routing) so your bike (your app) stays light.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 BIG PICTURE DIAGRAM -->
+  <section class="slide">
+    <div class="kicker">The architecture · End to end</div>
+    <h2>The two players: Gateway and Component</h2>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 1000 380" xmlns="http://www.w3.org/2000/svg">
+        <!-- client -->
+        <rect x="20" y="150" width="130" height="80" rx="12" fill="#ffffff" stroke="#d7dee6" stroke-width="2"/>
+        <text x="85" y="185" text-anchor="middle" font-size="15" font-weight="800" fill="#0f2747">Client</text>
+        <text x="85" y="206" text-anchor="middle" font-size="12" fill="#5e7184">caller + JWT</text>
+
+        <!-- gateway -->
+        <rect x="230" y="110" width="200" height="160" rx="14" fill="#e9f1fa" stroke="#1f5fa8" stroke-width="2.5"/>
+        <text x="330" y="98" text-anchor="middle" font-size="13" font-weight="700" fill="#1f5fa8">GATEWAY (Envoy)</text>
+        <text x="330" y="150" text-anchor="middle" font-size="14" fill="#0f2747" font-weight="700">① mTLS terminate</text>
+        <text x="330" y="178" text-anchor="middle" font-size="14" fill="#0f2747" font-weight="700">② Validate JWT</text>
+        <text x="330" y="206" text-anchor="middle" font-size="14" fill="#0f2747" font-weight="700">③ Match route</text>
+        <text x="330" y="234" text-anchor="middle" font-size="14" fill="#0f2747" font-weight="700">④ Forward</text>
+
+        <!-- component -->
+        <rect x="520" y="90" width="270" height="200" rx="14" fill="#ffffff" stroke="#16a085" stroke-width="2.5"/>
+        <text x="655" y="78" text-anchor="middle" font-size="13" font-weight="700" fill="#16a085">COMPONENT (your service)</text>
+        <rect x="540" y="120" width="110" height="140" rx="10" fill="#e6f5f0" stroke="#16a085" stroke-width="1.5"/>
+        <text x="595" y="170" text-anchor="middle" font-size="13" font-weight="800" fill="#0f2747">Envoy</text>
+        <text x="595" y="188" text-anchor="middle" font-size="13" font-weight="800" fill="#0f2747">sidecar</text>
+        <text x="595" y="212" text-anchor="middle" font-size="11" fill="#5e7184">mTLS·JWT</text>
+        <text x="595" y="227" text-anchor="middle" font-size="11" fill="#5e7184">re-check</text>
+        <rect x="665" y="120" width="105" height="140" rx="10" fill="#eef4fb" stroke="#1f5fa8" stroke-width="1.5"/>
+        <text x="717" y="180" text-anchor="middle" font-size="13" font-weight="800" fill="#0f2747">Python</text>
+        <text x="717" y="198" text-anchor="middle" font-size="13" font-weight="800" fill="#0f2747">app</text>
+
+        <!-- backend -->
+        <rect x="850" y="150" width="130" height="80" rx="12" fill="#fbf1e3" stroke="#e08a2b" stroke-width="2"/>
+        <text x="915" y="180" text-anchor="middle" font-size="14" font-weight="800" fill="#0f2747">Corporate</text>
+        <text x="915" y="200" text-anchor="middle" font-size="14" font-weight="800" fill="#0f2747">backend</text>
+
+        <!-- arrows -->
+        <line x1="150" y1="190" x2="228" y2="190" stroke="#1f5fa8" stroke-width="3"/>
+        <polygon points="230,190 218,184 218,196" fill="#1f5fa8"/>
+        <line x1="430" y1="190" x2="518" y2="190" stroke="#16a085" stroke-width="3"/>
+        <polygon points="520,190 508,184 508,196" fill="#16a085"/>
+        <text x="475" y="180" text-anchor="middle" font-size="11" fill="#16a085" font-weight="700">mTLS</text>
+        <!-- egress -->
+        <path d="M770 200 C 810 230, 820 200, 848 195" stroke="#e08a2b" stroke-width="3" fill="none"/>
+        <polygon points="850,194 838,190 840,202" fill="#e08a2b"/>
+        <text x="815" y="245" text-anchor="middle" font-size="11" fill="#e08a2b" font-weight="700">egress (mTLS)</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i class="dot" style="background:#1f5fa8"></i> Gateway — the front door for all external traffic</span>
+      <span><i class="dot" style="background:#16a085"></i> Component — your service + its sidecar</span>
+      <span><i class="dot" style="background:#e08a2b"></i> Corporate backend — internal data/services</span>
+    </div>
+  </section>
+
+  <!-- 8 GATEWAY DETAIL -->
+  <section class="slide">
+    <div class="kicker">Player 1</div>
+    <h2>The Gateway — the single front door</h2>
+    <p class="lead" style="margin-bottom:18px">One Envoy gateway sits at the edge. Every external request hits it first. Nothing reaches any component without passing through here.</p>
+    <div class="grid3">
+      <div class="card"><span class="pill">Step 1</span><h3 style="margin-top:10px">🔐 Terminate mTLS</h3><p>Verifies the caller's certificate and decrypts the connection. No cert, no entry.</p></div>
+      <div class="card"><span class="pill">Step 2</span><h3 style="margin-top:10px">🪪 Validate JWT</h3><p>Checks the token's signature, expiry, issuer and audience. Bad token → <span class="danger">401</span>.</p></div>
+      <div class="card"><span class="pill">Step 3</span><h3 style="margin-top:10px">🔀 Route to component</h3><p>Matches the path against an explicit allow-list and forwards to the right service over a fresh mTLS connection.</p></div>
+    </div>
+    <div class="analogy"><p><b>In short:</b> the gateway is the <b>main reception of the building</b>. It confirms your identity (mTLS), checks your badge and clearance (JWT), then escorts you only to the office you're authorised for (routing).</p></div>
+  </section>
+
+  <!-- 9 COMPONENT DETAIL -->
+  <section class="slide">
+    <div class="kicker">Player 2</div>
+    <h2>The Component — your service, guarded again</h2>
+    <p class="lead" style="margin-bottom:16px">Even though the gateway already checked the request, your component's <b>sidecar checks it a second time</b>. That's zero-trust: never assume an upstream did its job.</p>
+    <div class="grid2">
+      <div class="card">
+        <h3>🛡️ Sidecar responsibilities</h3>
+        <ul class="clean">
+          <li class="ok">mTLS with the gateway — proves traffic really came from it</li>
+          <li class="ok"><b>VRE re-validation</b> of the JWT — independent token check</li>
+          <li class="ok">Allow only the explicitly defined routes</li>
+          <li class="no">Block <code>/</code> and anything not on the list</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>🐍 Your Python app</h3>
+        <ul class="clean">
+          <li>Receives a clean, already-verified request on localhost</li>
+          <li>Runs your logic / model and returns a response</li>
+          <li>When it needs corporate data, it calls out through the sidecar (<span class="blue">egress</span>)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="analogy"><p><b>VRE = the second checkpoint.</b> Like a concert where reception scans your ticket at the street, and the usher scans it <i>again</i> at the door of your specific hall. Two independent checks, much harder to slip past.</p></div>
+  </section>
+
+  <!-- 10 REQUEST JOURNEY -->
+  <section class="slide">
+    <div class="kicker">Walkthrough</div>
+    <h2>The life of one request</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div class="hop"><span class="node">Client</span><span class="arrow">→</span><span class="node">Gateway</span></div>
+        <div class="desc">Sends the request with its JWT over an <b>mTLS</b> connection.</div>
+        <div class="tag2"><span class="pill">mTLS</span></div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div class="hop"><span class="node">Gateway</span><span class="arrow">→</span><span class="node">Sidecar</span></div>
+        <div class="desc">Gateway <b>validates the JWT</b>, matches the route, then forwards over <b>mTLS</b>.</div>
+        <div class="tag2"><span class="pill green">JWT ✓</span></div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div class="hop"><span class="node">Sidecar</span><span class="arrow">→</span><span class="node">Python app</span></div>
+        <div class="desc">Sidecar <b>re-checks the JWT (VRE)</b>, then passes a clean request to your app on localhost.</div>
+        <div class="tag2"><span class="pill green">VRE ✓</span></div>
+      </div>
+      <div class="step ret">
+        <div class="num">4</div>
+        <div class="hop"><span class="node">Python app</span><span class="arrow">⟲</span><span class="node">Client</span></div>
+        <div class="desc">The response travels back out along the exact same secured path.</div>
+        <div class="tag2"><span class="pill">return</span></div>
+      </div>
+    </div>
+    <ul class="clean" style="margin-top:14px">
+      <li class="warn">Fail any check → the request stops there with <code>401</code>/<code>403</code>, and your app never sees it.</li>
+    </ul>
+  </section>
+
+  <!-- 11 NO SLASH / ROUTES -->
+  <section class="slide">
+    <div class="kicker">Key rule</div>
+    <h2>Only defined routes. No bare <code>/</code>.</h2>
+    <div class="cols">
+      <div class="col">
+        <p class="lead" style="margin-bottom:14px">The sidecar has an explicit <b>allow-list</b> of paths. A request only reaches your app if its path is on that list. Everything else is rejected at the proxy.</p>
+        <div class="card">
+          <h3 style="font-size:18px">✅ Allowed (example)</h3>
+          <ul class="clean">
+            <li class="ok"><code>POST /v1/predict</code></li>
+            <li class="ok"><code>GET /v1/health</code></li>
+            <li class="ok"><code>POST /v1/embeddings</code></li>
+          </ul>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card" style="border-color:#f0c8c2;background:#fdf4f3">
+          <h3 style="font-size:18px">⛔ Blocked</h3>
+          <ul class="clean">
+            <li class="no"><code>/</code> — no catch-all root</li>
+            <li class="no"><code>/admin</code>, <code>/debug</code>, <code>/v1/secret</code> — not declared</li>
+            <li class="no">Any path not explicitly added</li>
+          </ul>
+        </div>
+        <div class="analogy" style="margin-top:14px"><p><b>Why no <code>/</code>?</b> A wildcard root would expose <i>every</i> path by accident. Listing each route means nothing is reachable unless someone deliberately opened it — the safe default is "closed".</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11a ENVOY ANATOMY -->
+  <section class="slide">
+    <div class="kicker">Reading a config</div>
+    <h2>Envoy's building blocks</h2>
+    <p class="lead" style="margin-bottom:14px">Every Envoy config is the same handful of nested "resources". Once you can spot these five, any config — gateway or sidecar — reads the same way.</p>
+    <div class="cols">
+      <div class="col" style="flex:1.5">
+        <div class="anat">
+          <div class="anat-h">listener <small>— a port Envoy accepts traffic on</small></div>
+          <div class="sub">
+            <div class="box green"><div class="t">transport_socket</div><div class="d">TLS / mTLS settings for this port — certs &amp; whether a client cert is required</div></div>
+            <div class="box"><div class="t">filter_chain → http_connection_manager</div><div class="d">the HTTP engine; holds the two pieces below</div>
+              <div class="sub">
+                <div class="box"><div class="t">http_filters</div><div class="d">the processing pipeline: <code>jwt_authn</code>, then <code>router</code> …</div></div>
+                <div class="box"><div class="t">route_config → routes</div><div class="d">path → cluster matching (your allow-list)</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="anat" style="margin-top:14px;border-color:var(--accent-warn);background:#fdf8f0">
+          <div class="anat-h" style="color:var(--accent-warn)">clusters <small>— the destinations Envoy can forward to</small></div>
+          <div class="sub" style="border-color:#f0dcc0">
+            <div class="box amber"><div class="t">load_assignment</div><div class="d">addresses of the upstream (your app, a backend, the IdP)</div></div>
+            <div class="box amber"><div class="t">transport_socket</div><div class="d">TLS / mTLS used when Envoy connects <i>out</i> to that destination</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="analogy"><p><b>Hotel analogy:</b> a <b>listener</b> is a guarded entrance, its <b>transport_socket</b> is the ID check at that door, <b>http_filters</b> are the checkpoints you walk through inside, <b>routes</b> are the floor directory, and <b>clusters</b> are the actual rooms (and the secure line out to other buildings).</p></div>
+        <ul class="clean" style="margin-top:12px">
+          <li class="ok"><b>Inbound</b> security lives on the <i>listener's</i> transport_socket.</li>
+          <li class="ok"><b>Outbound</b> security lives on the <i>cluster's</i> transport_socket.</li>
+          <li class="ok">Auth logic always sits in <b>http_filters</b>; access rules in <b>routes</b>.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11a2 CONCEPT MAPPING -->
+  <section class="slide">
+    <div class="kicker">Reading a config</div>
+    <h2>Each concept → where it lives in the config</h2>
+    <table class="map">
+      <thead><tr><th style="width:26%">Architecture concept</th><th style="width:34%">Envoy resource</th><th>Key field(s)</th></tr></thead>
+      <tbody>
+        <tr><td class="concept">Inbound mTLS<br><span class="muted" style="font-weight:400;font-size:14px">caller must show a cert</span></td><td>listener → <code>transport_socket</code><br><span class="muted" style="font-size:14px">DownstreamTlsContext</span></td><td><code>require_client_certificate: true</code> · <code>validation_context.trusted_ca</code></td></tr>
+        <tr><td class="concept">Outbound mTLS<br><span class="muted" style="font-weight:400;font-size:14px">prove identity to upstream</span></td><td>cluster → <code>transport_socket</code><br><span class="muted" style="font-size:14px">UpstreamTlsContext</span></td><td><code>tls_certificates</code> (own cert+key) · <code>validation_context.trusted_ca</code></td></tr>
+        <tr><td class="concept">JWT validation / VRE</td><td><code>http_filters</code> → <code>jwt_authn</code></td><td><code>providers.issuer</code> · <code>audiences</code> · <code>remote_jwks</code> · <code>rules.requires</code></td></tr>
+        <tr><td class="concept">Only defined routes · no <code>/</code></td><td><code>route_config</code> → <code>routes</code></td><td><code>match.path</code> / <code>prefix</code> → cluster · trailing <code>/</code> = <code>direct_response 404/403</code></td></tr>
+        <tr><td class="concept">Reach your app / backend</td><td><code>clusters</code></td><td><code>load_assignment.endpoints</code> (address + port)</td></tr>
+        <tr><td class="concept">Egress to corporate backend</td><td>egress listener + <code>corporate_backend</code> cluster</td><td>local <code>127.0.0.1:15001</code> in · UpstreamTlsContext out</td></tr>
+      </tbody>
+    </table>
+    <p class="codecap">Same six rows appear in both files — the gateway and the sidecar are just different combinations of these resources.</p>
+  </section>
+
+  <!-- 11b GATEWAY CONFIG -->
+  <section class="slide">
+    <div class="kicker">Config example <span class="filetag">gateway-envoy.yaml</span></div>
+    <h2>What the gateway config looks like</h2>
+    <div class="cols">
+      <div class="col" style="flex:1.35;display:flex;flex-direction:column;min-height:0;">
+        <div class="code"><pre><span class="c"># (1) downstream mTLS — caller MUST show a cert</span>
+transport_socket:
+  typed_config:
+    "@type": <span class="v">...DownstreamTlsContext</span>
+    <span class="h">require_client_certificate: true</span>
+    common_tls_context:
+      tls_certificates: [<span class="v">gateway.crt / .key</span>]
+      validation_context:
+        trusted_ca: <span class="v">client-ca.crt</span>
+
+<span class="c"># (2) JWT validation filter</span>
+http_filters:
+- name: <span class="k">envoy.filters.http.jwt_authn</span>
+  typed_config:
+    providers:
+      corporate_idp:
+        <span class="h">issuer: "https://idp.corp.example.com"</span>
+        <span class="h">audiences: ["ai-platform"]</span>
+        remote_jwks: { http_uri: <span class="v">.../jwks.json</span> }
+    rules:
+    - match: { prefix: <span class="v">"/v1/"</span> }
+      requires: { provider_name: corporate_idp }
+
+<span class="c"># (3) routing — explicit paths only</span>
+routes:
+- match: { prefix: <span class="v">"/v1/predict"</span> }
+  route: { cluster: <span class="v">component_predict</span> }
+- match: { prefix: <span class="v">"/"</span> }
+  <span class="h">direct_response: { status: 404 }</span>  <span class="c"># no catch-all</span></pre></div>
+      </div>
+      <div class="col">
+        <ul class="clean">
+          <li class="ok"><b>require_client_certificate: true</b> is the single line that turns TLS into <i>mutual</i> TLS.</li>
+          <li class="ok">The <b>jwt_authn</b> filter checks issuer, audience &amp; signature against the IdP's published keys (JWKS).</li>
+          <li class="ok">Routes list the allowed prefixes; the final <code>/</code> rule returns <b>404</b> instead of forwarding.</li>
+          <li class="warn">An upstream cluster (not shown here) connects to the component over mTLS again.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11c COMPONENT CONFIG -->
+  <section class="slide">
+    <div class="kicker">Config example <span class="filetag">component-envoy.yaml</span></div>
+    <h2>What the sidecar config looks like</h2>
+    <div class="cols">
+      <div class="col" style="flex:1.35;display:flex;flex-direction:column;min-height:0;">
+        <div class="code"><pre><span class="c"># INGRESS — only the gateway may connect (mTLS)</span>
+transport_socket:
+  typed_config:
+    "@type": <span class="v">...DownstreamTlsContext</span>
+    <span class="h">require_client_certificate: true</span>
+    validation_context: { trusted_ca: <span class="v">mesh-ca.crt</span> }
+
+<span class="c"># VRE — re-validate the JWT independently</span>
+- name: <span class="k">envoy.filters.http.jwt_authn</span>
+  providers:
+    corporate_idp:
+      issuer: <span class="v">"https://idp.corp.example.com"</span>
+      <span class="h">forward_payload_header: "x-jwt-claims"</span> <span class="c"># app reads identity</span>
+
+<span class="c"># route allow-list — exact paths, NO bare "/"</span>
+routes:
+- match: { <span class="h">path: "/v1/predict"</span> }
+  route: { cluster: <span class="v">local_app</span> }      <span class="c"># 127.0.0.1:8080</span>
+- match: { prefix: "/" }
+  <span class="h">direct_response: { status: 403 }</span>     <span class="c"># everything else blocked</span>
+
+<span class="c"># EGRESS — app calls localhost, sidecar adds mTLS</span>
+clusters:
+- name: <span class="v">corporate_backend</span>
+  transport_socket:
+    typed_config: { "@type": <span class="v">...UpstreamTlsContext</span>,
+      tls_certificates: [<span class="v">component.crt / .key</span>] }</pre></div>
+      </div>
+      <div class="col">
+        <ul class="clean">
+          <li class="ok"><b>Second mTLS + second JWT check</b> — the sidecar trusts nothing from upstream.</li>
+          <li class="ok"><code>forward_payload_header</code> hands your Python app the verified claims as a header.</li>
+          <li class="no">Routes use exact <b>path</b> matches; the trailing <code>/</code> rule returns <b>403</b>.</li>
+          <li class="warn"><b>Egress:</b> your app posts to <code>localhost:15001</code>; the sidecar attaches the cert and opens mTLS to the backend.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12 EGRESS -->
+  <section class="slide">
+    <div class="kicker">Outbound</div>
+    <h2>Egress — calling the corporate backend</h2>
+    <p class="lead" style="margin-bottom:16px">When your app needs internal data, it doesn't connect to the backend directly. It sends the call to its <b>sidecar</b>, which performs the secure egress on your behalf.</p>
+    <div class="grid2">
+      <div class="card">
+        <h3>What the sidecar does on the way out</h3>
+        <ul class="clean">
+          <li class="ok">Opens an <b>mTLS</b> connection to the corporate backend</li>
+          <li class="ok">Presents the component's identity certificate</li>
+          <li class="ok">Restricts egress to approved destinations only</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>What you write in Python</h3>
+        <p style="font-size:15px"><code>requests.post("http://localhost:PORT/backend/...")</code></p>
+        <p class="muted" style="margin-top:10px;font-size:15px">You call a plain local address. The sidecar adds the certificates, encryption and identity. No TLS code in your app.</p>
+      </div>
+    </div>
+    <div class="analogy"><p><b>Analogy:</b> the sidecar is your <b>company courier</b>. You hand it a sealed envelope; it knows the secure route, shows the right credentials at the backend's door, and brings the reply back to your desk.</p></div>
+  </section>
+
+  <!-- 12b EGRESS CONFIG -->
+  <section class="slide">
+    <div class="kicker">Config example <span class="filetag">component-envoy.yaml · egress</span></div>
+    <h2>What the egress config looks like</h2>
+    <div class="cols">
+      <div class="col" style="flex:1.4;display:flex;flex-direction:column;min-height:0;">
+        <div class="code"><pre><span class="c"># 1) a local listener the app posts to (localhost only)</span>
+- name: egress
+  address:
+    socket_address: { address: <span class="h">127.0.0.1</span>, port_value: <span class="h">15001</span> }
+  filter_chains:
+  - filters:
+    - name: envoy.filters.network.http_connection_manager
+      typed_config:
+        route_config:
+          virtual_hosts:
+          - name: backend
+            domains: ["*"]
+            routes:
+            - match: { prefix: "/" }
+              route: { cluster: <span class="v">corporate_backend</span> }  <span class="c"># only this dest</span>
+        http_filters:
+        - name: <span class="k">envoy.filters.http.router</span>
+
+<span class="c"># 2) the destination cluster — sidecar adds mTLS going out</span>
+clusters:
+- name: <span class="v">corporate_backend</span>
+  type: STRICT_DNS
+  load_assignment:
+    endpoints: [{ socket_address:
+      { address: <span class="v">api.backend.corp.example.com</span>, port_value: 443 } }]
+  transport_socket:
+    typed_config:
+      "@type": <span class="v">...UpstreamTlsContext</span>
+      common_tls_context:
+        <span class="h">tls_certificates: [component.crt / .key]</span>  <span class="c"># our identity</span>
+        validation_context: { trusted_ca: <span class="v">corp-ca.crt</span> }</pre></div>
+      </div>
+      <div class="col" style="display:flex;flex-direction:column;gap:14px;">
+        <ul class="clean">
+          <li class="ok">The egress listener is bound to <b>127.0.0.1</b> — only your own app can reach it, never the outside world.</li>
+          <li class="ok">The single <code>corporate_backend</code> cluster is the <b>only</b> allowed destination; anything else has no route.</li>
+          <li class="ok"><b>UpstreamTlsContext</b> attaches the component's cert, so the backend sees a trusted, authenticated caller (mTLS).</li>
+        </ul>
+        <div class="card" style="background:#0f2747;border:none">
+          <h3 style="color:#9be8c8;font-size:15px;font-family:'SF Mono',Menlo,monospace;margin-bottom:8px">your_app.py</h3>
+          <p style="font-family:'SF Mono',Menlo,Consolas,monospace;font-size:13.5px;color:#cde3ff;line-height:1.6">resp = requests.get(<br>&nbsp;&nbsp;<span style="color:#9be8c8">"http://localhost:15001/customers/42"</span>)<br><span style="color:#6f8aa8"># plain HTTP to localhost —</span><br><span style="color:#6f8aa8"># the sidecar adds mTLS + identity</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12c WEBSOCKET -->
+  <section class="slide">
+    <div class="kicker">Chatbot specifics</div>
+    <h2>WebSockets — the chat stream</h2>
+    <p class="lead" style="margin-bottom:12px">A chatbot keeps a <b>long-lived WebSocket</b> open instead of one request per message. Envoy blocks protocol upgrades by default, so both the gateway and the sidecar must explicitly allow them.</p>
+    <div class="analogy" style="margin-bottom:14px;border-left-color:var(--accent)"><p><b>What "upgrade" means:</b> a WebSocket starts as an ordinary HTTP request carrying <code>Connection: Upgrade · Upgrade: websocket</code>. The server answers <code>101 Switching Protocols</code> and the same connection switches from HTTP into a two-way stream. <code>upgrade_configs</code> is simply Envoy's opt-in that permits this handshake — it's named after the HTTP "Upgrade" it allows.</p></div>
+    <div class="cols">
+      <div class="col" style="flex:1.25;display:flex;flex-direction:column;min-height:0;">
+        <div class="code"><pre><span class="c"># in the http_connection_manager (gateway AND sidecar)</span>
+<span class="h">upgrade_configs:</span>
+<span class="h">- upgrade_type: websocket</span>      <span class="c"># allow the HTTP -> WS upgrade</span>
+stream_idle_timeout: <span class="h">0s</span>     <span class="c"># keep idle sockets open</span>
+
+<span class="c"># per-route, on the chat endpoint</span>
+- match: { prefix: <span class="v">"/v1/chat"</span> }
+  route:
+    cluster: <span class="v">local_app</span>
+    <span class="h">timeout: 0s</span>             <span class="c"># never time out a live chat</span>
+    <span class="h">upgrade_configs:</span>
+    <span class="h">- upgrade_type: websocket</span></pre></div>
+      </div>
+      <div class="col" style="display:flex;flex-direction:column;justify-content:center;gap:14px;">
+        <ul class="clean">
+          <li class="ok"><b>JWT is still checked</b> — the upgrade handshake is an HTTP request carrying the token, so <code>jwt_authn</code> validates it before the socket opens.</li>
+          <li class="ok"><b>mTLS is unchanged</b> — the WebSocket runs inside the same encrypted, mutually-authenticated connection.</li>
+          <li class="warn"><b>timeout: 0s</b> and <code>stream_idle_timeout: 0s</code> stop Envoy from dropping a quiet conversation mid-session.</li>
+          <li class="no">Without <code>upgrade_configs</code> the handshake is rejected and the chat never connects.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="analogy"><p><b>In short:</b> the security model doesn't change for chat — you just tell Envoy "this route may upgrade to a WebSocket, and don't hang up when it goes quiet."</p></div>
+  </section>
+
+  <!-- 13 WHAT IT MEANS FOR YOU -->
+  <section class="slide">
+    <div class="kicker">For you, the developer</div>
+    <h2>What you actually have to do</h2>
+    <div class="grid2">
+      <div class="card" style="background:#f0f8f4;border-color:#bfe3d4">
+        <h3>✅ Your job</h3>
+        <ul class="clean">
+          <li class="ok">Declare your routes (the paths the platform should expose)</li>
+          <li class="ok">Listen on the local port the platform tells you</li>
+          <li class="ok">Read the user identity from the forwarded JWT/headers if you need it</li>
+          <li class="ok">Call the backend via <code>localhost</code> through the sidecar</li>
+        </ul>
+      </div>
+      <div class="card" style="background:#f3f6fb;border-color:#cdddf0">
+        <h3>🚫 Not your job</h3>
+        <ul class="clean">
+          <li class="no">Writing TLS / certificate handling</li>
+          <li class="no">Verifying JWT signatures yourself</li>
+          <li class="no">Managing mTLS handshakes</li>
+          <li class="no">Configuring Envoy (the platform owns it)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="analogy"><p><b>Bottom line:</b> if your code works against <code>localhost</code> and only the declared routes, the gateway and sidecar take care of the rest — encryption, identity, and access control come "for free".</p></div>
+  </section>
+
+  <!-- 14 GOTCHAS -->
+  <section class="slide">
+    <div class="kicker">Debugging</div>
+    <h2>Common gotchas &amp; what they mean</h2>
+    <div class="grid2">
+      <div class="card"><h3 class="danger">401 Unauthorized</h3><p>Missing, expired or invalid JWT. The gateway or sidecar rejected it — the request never reached your app.</p></div>
+      <div class="card"><h3 class="danger">403 / 404 on a path</h3><p>The route isn't on the allow-list. Add it to your declared routes (remember: no bare <code>/</code>).</p></div>
+      <div class="card"><h3 style="color:#e08a2b">mTLS / handshake errors</h3><p>Certificate problem between hops — usually a platform/cert issue, not your code. Escalate with the trace ID.</p></div>
+      <div class="card"><h3 class="blue">Backend call fails locally</h3><p>Check you're calling the sidecar's local egress address, and that the destination is on the approved egress list.</p></div>
+    </div>
+    <ul class="clean" style="margin-top:14px">
+      <li class="warn">Tip: a request that "never arrives" was almost always stopped at a proxy — check the gateway/sidecar logs first, not your app.</li>
+    </ul>
+  </section>
+
+  <!-- 15 SUMMARY -->
+  <section class="slide center" style="background:linear-gradient(135deg,#0f2747,#1f5fa8)">
+    <div class="kicker" style="color:#9cc4ec">Cheat sheet</div>
+    <h2 style="color:#fff">The whole thing in five lines</h2>
+    <div class="card" style="max-width:820px;background:rgba(255,255,255,.97)">
+      <ul class="clean">
+        <li class="ok"><b>Gateway</b> = single front door: terminates mTLS, validates the JWT, routes to components.</li>
+        <li class="ok"><b>Component</b> = your app + an Envoy sidecar that re-checks everything (mTLS + VRE JWT).</li>
+        <li class="ok"><b>Only declared routes</b> are reachable — <span class="danger">never a bare <code>/</code></span>.</li>
+        <li class="ok"><b>Egress</b> to the corporate backend goes out through the sidecar over mTLS.</li>
+        <li class="ok"><b>You</b> write plain Python against <code>localhost</code>; the platform supplies the security.</li>
+      </ul>
+    </div>
+    <p style="color:#cdddf0;margin-top:26px;font-size:16px">Questions? The platform team owns the Envoy config — you own the routes and the logic.</p>
+  </section>
+
+</div>
+
+<div class="counter" id="counter">1 / 15</div>
+<div class="footer-note">← → or Space to navigate · F for fullscreen</div>
+<div class="nav">
+  <button id="prev" aria-label="Previous">‹</button>
+  <button id="next" aria-label="Next">›</button>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  let i = 0;
+  const bar = document.getElementById('bar');
+  const counter = document.getElementById('counter');
+  const prev = document.getElementById('prev');
+  const next = document.getElementById('next');
+
+  function show(n){
+    i = Math.max(0, Math.min(slides.length-1, n));
+    slides.forEach((s,idx)=>s.classList.toggle('active', idx===i));
+    bar.style.width = ((i+1)/slides.length*100)+'%';
+    counter.textContent = (i+1)+' / '+slides.length;
+    prev.disabled = i===0;
+    next.disabled = i===slides.length-1;
+  }
+  prev.onclick=()=>show(i-1);
+  next.onclick=()=>show(i+1);
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){e.preventDefault();show(i+1);}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();show(i-1);}
+    else if(e.key==='Home'){show(0);}
+    else if(e.key==='End'){show(slides.length-1);}
+    else if(e.key.toLowerCase()==='f'){
+      if(!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+  });
+  show(0);
+</script>
+</body>
+</html>
